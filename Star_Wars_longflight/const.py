@@ -1,3 +1,13 @@
+from enum import Enum
+
+
+class GameState(Enum):
+    MENU = 'menu'
+    PLAYING = 'playing'
+    GAME_OVER = 'game_over'
+    VICTORY = 'victory'
+
+
 # Размеры экрана
 SCREEN_WIDTH = 256
 SCREEN_HEIGHT = 160
