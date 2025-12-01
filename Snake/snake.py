@@ -1,10 +1,11 @@
 from random import randint
 import os
+from abc import ABC, abstractmethod
 
 import pygame
-from pygame import font
 
 from config import *
+from load_image import load_image
 
 
 # Настройка игрового окна:
@@ -12,29 +13,15 @@ screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT), 0, 32)
 pygame.display.set_caption('Змейка')
 clock = pygame.time.Clock()
 
-# Получаем путь к директории, где находится скрипт
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-IMAGES_DIR = os.path.join(BASE_DIR, "images") # изображение в папке images
 
-def load_image(name):
-    image_path = os.path.join(IMAGES_DIR, f"{name}.png")
-    try:
-        image = pygame.image.load(image_path)
-        image = pygame.transform.scale(image, (GRID_SIZE, GRID_SIZE))
-        return image
-    except FileNotFoundError:
-        print(f"Ошибка: Файл {image_path} не найден!")
-
-
-class GameObject:
-    """Класс, представляющий игровой объект."""
-
-    def __init__(self, body_color=None):
+class GameObject(ABC):
+    def __init__(self, position=None, body_color=None):
         """Инициализация игрового объекта."""
-        self.position = ((SCREEN_WIDTH // 2), (SCREEN_HEIGHT // 2))
+        self.position = position or ((SCREEN_WIDTH // 2), (SCREEN_HEIGHT // 2))
         self.body_color = body_color
 
-    def draw(self):
+    @abstractmethod
+    def draw(self, screen):
         """
         Метод для отрисовки игрового объекта.
         Пока что метод ничего не делает, его нужно доработать.
@@ -85,20 +72,10 @@ class Snake(GameObject):
     def calculate_new_head_position(self):
         """Вычисляет новую позицию головы."""
         head_x, head_y = self.get_head_position()
-
         direction_x, direction_y = self.direction
-        new_head_x = (head_x + (direction_x * GRID_SIZE)) % SCREEN_WIDTH
-        new_head_y = (head_y + (direction_y * GRID_SIZE)) % SCREEN_HEIGHT
 
-        if new_head_x < 0:
-            new_head_x = SCREEN_WIDTH - GRID_SIZE
-        elif new_head_x >= SCREEN_WIDTH:
-            new_head_x = 0
-        
-        if new_head_y < 0:
-            new_head_y = SCREEN_HEIGHT - GRID_SIZE
-        elif new_head_y >= SCREEN_HEIGHT:
-            new_head_y = 0
+        new_head_x = (head_x + direction_x * GRID_SIZE) % SCREEN_WIDTH
+        new_head_y = (head_y + direction_y * GRID_SIZE) % SCREEN_HEIGHT
 
         return (new_head_x, new_head_y)
 
@@ -186,7 +163,7 @@ class Apple(GameObject):
         screen.blit(self.apple_image, position)
 
 
-def handle_keys(game_object):
+def handle_keys(game_object, paused=False):
     """Обрабатывает события клавиатуры для управления игровым объектом."""
     for event in pygame.event.get():
         # Обработка закрытия окна (крестик)
@@ -206,20 +183,18 @@ def handle_keys(game_object):
                 raise SystemExit
             # Пауза
             elif event.key == pygame.K_p:
-                paused = True
-                while paused:
-                    for e in pygame.event.get():
-                        if e.type == pygame.KEYDOWN and e.key == pygame.K_p:
-                            paused = False
+                return 'pause'
             # Управление направлением
-            elif (event.key == pygame.K_UP or event.key == pygame.K_w) and game_object.direction != DOWN:
-                game_object.next_direction = UP
-            elif (event.key == pygame.K_DOWN or event.key == pygame.K_s) and game_object.direction != UP:
-                game_object.next_direction = DOWN
-            elif (event.key == pygame.K_LEFT or event.key == pygame.K_a) and game_object.direction != RIGHT:
-                game_object.next_direction = LEFT
-            elif (event.key == pygame.K_RIGHT or event.key == pygame.K_d) and game_object.direction != LEFT:
-                game_object.next_direction = RIGHT
+            elif not paused:
+                if (event.key == pygame.K_UP or event.key == pygame.K_w) and game_object.direction != DOWN:
+                    game_object.next_direction = UP
+                elif (event.key == pygame.K_DOWN or event.key == pygame.K_s) and game_object.direction != UP:
+                    game_object.next_direction = DOWN
+                elif (event.key == pygame.K_LEFT or event.key == pygame.K_a) and game_object.direction != RIGHT:
+                    game_object.next_direction = LEFT
+                elif (event.key == pygame.K_RIGHT or event.key == pygame.K_d) and game_object.direction != LEFT:
+                    game_object.next_direction = RIGHT
+    return None
 
 
 def main():
@@ -243,6 +218,7 @@ def main():
 
     score = 0
     current_speed = SPEED
+    paused = False
     
     apple = Apple()
     snake = Snake()
@@ -251,49 +227,54 @@ def main():
     apple.randomize_position(snake.positions)
 
     while True:
-        # Обновляем скорость: +1 каждые 5 очков
-        up_speed = SPEED + (score // 5)
-        up_speed = min(up_speed, MAX_SPEED)
+        result = handle_keys(snake, paused)
 
-        if up_speed != current_speed:
-            current_speed = up_speed
-            # print(f'speed: {current_speed}, score: {score}')
-        clock.tick(current_speed)
+        if result == 'pause':
+            paused = not paused
 
-        # Обработка нажатия клавиш и обновление движения змейки
-        handle_keys(snake)
-        snake.update_direction()
-        
-        head_rect = pygame.Rect(snake.get_head_position(), (GRID_SIZE, GRID_SIZE))
-        apple_rect = pygame.Rect(apple.position, (GRID_SIZE, GRID_SIZE))
+        if not paused:
+            # Обновляем скорость: +1 каждые 5 очков
+            up_speed = SPEED + (score // 5)
+            up_speed = min(up_speed, MAX_SPEED)
 
-        grow = False
-        if head_rect.colliderect(apple_rect):
-            grow = True
-            score += apple.points  
-        
-        snake.move(grow=grow)    
-        
-        if snake.get_head_position() in snake.positions[1:]:
-            snake.reset()
-            score = 0
-            apple.randomize_position(snake.positions)
-            continue
+            if up_speed != current_speed:
+                current_speed = up_speed
+                # print(f'speed: {current_speed}, score: {score}')
+            clock.tick(current_speed)
 
-        # Спавним новое яблоко (если было съедено)
-        if grow:
-            apple.randomize_position(snake.positions)
+            # Обработка нажатия клавиш и обновление движения змейки
+            snake.update_direction()
+            
+            head_rect = pygame.Rect(snake.get_head_position(), (GRID_SIZE, GRID_SIZE))
+            apple_rect = pygame.Rect(apple.position, (GRID_SIZE, GRID_SIZE))
 
-        # Финальная отрисовка змейки и яблока
-        screen.fill(BOARD_BACKGROUND_COLOR)
-        snake.draw(screen)
-        apple.draw(screen)
+            grow = False
+            if head_rect.colliderect(apple_rect):
+                grow = True
+                score += apple.points  
+            
+            snake.move(grow=grow)    
+            
+            if snake.get_head_position() in snake.positions[1:]:
+                snake.reset()
+                score = 0
+                apple.randomize_position(snake.positions)
+                continue
 
-        # Отрисовка очков
-        score_text = score_font.render(f'Очки: {score}| Pause "P"', True, SCORE_COLOR)
-        screen.blit(score_text, SCORE_POSITION)
+            # Спавним новое яблоко (если было съедено)
+            if grow:
+                apple.randomize_position(snake.positions)
 
-        pygame.display.update()
+            # Финальная отрисовка змейки и яблока
+            screen.fill(BOARD_BACKGROUND_COLOR)
+            snake.draw(screen)
+            apple.draw(screen)
+
+            # Отрисовка очков
+            score_text = score_font.render(f'Очки: {score}| Pause "P"', True, SCORE_COLOR)
+            screen.blit(score_text, SCORE_POSITION)
+
+            pygame.display.update()
 
 
 if __name__ == '__main__':
