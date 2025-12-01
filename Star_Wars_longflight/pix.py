@@ -1,38 +1,18 @@
-import os
-import threading
 import time
 
-import pygame
 import pyxel
 
 from const import *
 from objects import Enemy, Player
-
-
-# Инициализация Pygame для музыки
-pygame.mixer.init()
-
-
-def play_background_music():
-    '''Запуск фоновой музыки'''
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    music_path = os.path.join(base_dir, 'sound', 'Star_wars.mp3')
-
-    try:
-        pygame.mixer.music.load(music_path)
-        pygame.mixer.music.set_volume(0.3)
-        pygame.mixer.music.play(-1)
-    except Exception as e:
-        print(f'Не удалось загрузить музыку: {e}')
-
-# Запускаем музыку в отдельном потоке
-music_thread = threading.Thread(target=play_background_music, daemon=True)
-music_thread.start()
+from music_manager import start_background_music
 
 
 class App:
     def __init__(self):
         pyxel.init(SCREEN_WIDTH, SCREEN_HEIGHT, title='Star Wars: long flight')
+        # Запускаем фоновую музыку
+        start_background_music()
+
         self.load_resources()
         self.init_game()
         pyxel.run(self.update, self.draw)
@@ -174,7 +154,6 @@ class App:
     def draw(self):
         '''Отрисовка игры'''
         pyxel.cls(0)
-
         # Фон
         pyxel.blt(0, 0, SPRITE_BACKGROUND, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT)
 
