@@ -44,3 +44,6 @@ pyinstaller --onefile <путь/до/файла>
 # Пример из папки с игрой:
 pyinstaller --onefile snake.py
 ```
+
+## 👨‍💻 Автор
+[Дмитрий] - [https://github.com/Dmitriytechf]
