@@ -1,254 +1,369 @@
-import pyxel
-import random
-import time
-import pygame
-import threading
 import os
+import random
+import threading
+import time
+from enum import Enum
+
+import pygame
+import pyxel
+
+from const import *
 
 
 # Инициализация Pygame для музыки
 pygame.mixer.init()
 
+class GameState(Enum):
+    MENU = 'menu'
+    PLAYING = 'playing'
+    GAME_OVER = 'game_over'
+    VICTORY = 'victory'
+
+
 def play_background_music():
-    # Получаем путь к директории скрипта
+    '''Запуск фоновой музыки'''
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    # Строим полный путь к файлу
-    music_path = os.path.join(base_dir, "sound", "Star_wars.mp3")
+    music_path = os.path.join(base_dir, 'sound', 'Star_wars.mp3')
 
-    pygame.mixer.music.load(music_path)
-    pygame.mixer.music.set_volume(0.5)  # Громкость (0.0 - 1.0)
-    pygame.mixer.music.play(-1)  # -1 = зациклить
+    try:
+        pygame.mixer.music.load(music_path)
+        pygame.mixer.music.set_volume(0.5)
+        pygame.mixer.music.play(-1)
+    except Exception as e:
+        print(f'Не удалось загрузить музыку: {e}')
 
-# Запускаем музыку в отдельном потоке (чтобы Pyxel не тормозил)
-music_thread = threading.Thread(target=play_background_music)
-music_thread.daemon = True  # Закрыть поток при завершении программы
+# Запускаем музыку в отдельном потоке
+music_thread = threading.Thread(target=play_background_music, daemon=True)
 music_thread.start()
 
 
+class Bullet:
+    '''Класс пули'''
+    def __init__(self, x, y, speed, color, width=1, height=5, is_enemy=False):
+        self.x = x
+        self.y = y
+        self.speed = speed
+        self.color = color
+        self.width = width
+        self.height = height
+        self.is_enemy = is_enemy
+
+    def update(self):
+        '''Обновление позиции пули'''
+        if self.is_enemy:
+            self.y += self.speed  # Вражеские пули летят вниз
+        else:
+            self.y -= self.speed  # Пули игрока летят вверх
+
+    def is_out_of_bounds(self):
+        '''Проверка выхода за границы экрана'''
+        if self.is_enemy:
+            return self.y > SCREEN_HEIGHT
+        else:
+            return self.y < 0
+
+    def draw(self):
+        '''Отрисовка пули'''
+        pyxel.rect(self.x, self.y, self.width, self.height, self.color)
+
+
+class Enemy:
+    '''Класс вражеского корабля'''
+    def __init__(self):
+        self.width = 16
+        self.height = 16
+        self.reset()
+
+    def reset(self):
+        '''Сброс состояния врага'''
+        self.x = random.randint(0, SCREEN_WIDTH - self.width)
+        self.y = random.randint(0, 60)
+        self.speed = random.uniform(0.5, 1.1)
+        self.direction = random.choice([-1, 1])
+        self.alive = True
+        self.death_time = 0
+        self.sprite_x = 0
+        self.sprite_y = 0
+
+    def update(self):
+        '''Обновление позиции врага'''
+        if not self.alive:
+            return
+
+        self.x += self.speed * self.direction
+        
+        # Проверка границ экрана
+        if self.x <= 0 or self.x >= SCREEN_WIDTH - self.width:
+            self.direction *= -1
+
+    def should_shoot(self):
+        '''Определяет, должен ли враг выстрелить'''
+        return pyxel.rndi(0, 70) < 1
+
+    def create_bullet(self):
+        '''Создает пулю из позиции врага'''
+        return Bullet(
+            x=self.x + self.width // 2 - 1,
+            y=self.y + self.height,
+            speed=3,
+            color=COLOR_ENEMY_BULLET,
+            height=3,
+            is_enemy=True
+        )
+
+    def should_respawn(self, current_time):
+        '''Проверяет, должен ли враг возродиться'''
+        return not self.alive and current_time - self.death_time > ENEMY_RESPAWN_TIME
+
+    def draw(self):
+        '''Отрисовка врага'''
+        if self.alive:
+            pyxel.blt(
+                self.x, self.y, SPRITE_ENEMY,
+                self.sprite_x, self.sprite_y,
+                self.width, self.height, 0
+            )
+
+
+class Player:
+    '''Класс игрока'''
+    def __init__(self):
+        self.width = 16
+        self.height = 16
+        self.reset()
+
+    def reset(self):
+        '''Сброс позиции игрока'''
+        self.x = 112
+        self.y = 120
+
+    def update(self):
+        '''Обновление позиции игрока'''
+        if pyxel.btn(pyxel.KEY_A):
+            self.x = max(self.x - 2, 0)
+        if pyxel.btn(pyxel.KEY_D):
+            self.x = min(self.x + 2, SCREEN_WIDTH - self.width)
+        if pyxel.btn(pyxel.KEY_W):
+            self.y = max(self.y - 2, 100)
+        if pyxel.btn(pyxel.KEY_S):
+            self.y = min(self.y + 2, SCREEN_HEIGHT - self.height)
+
+    def can_shoot(self):
+        '''Проверяет, может ли игрок выстрелить'''
+        return pyxel.btnp(pyxel.KEY_SPACE, 10, 5)
+
+    def create_bullet(self):
+        '''Создает пулю из позиции игрока'''
+        return Bullet(
+            x=self.x + 7,
+            y=self.y,
+            speed=3,
+            color=COLOR_PLAYER_BULLET
+        )
+
+    def draw(self):
+        '''Отрисовка игрока'''
+        pyxel.blt(self.x, self.y, SPRITE_PLAYER, 0, 0, self.width, self.height, colkey=0)
+
+
+# ==================== ГЛАВНЫЙ КЛАСС ИГРЫ ====================
 class App:
     def __init__(self):
-        pyxel.init(256, 160, title="Star Wars: long flight")
-        # Загружаем изображение (убедитесь, что kosmo.png имеет размер 256x160)
-        pyxel.image(0).load(0, 0, "img/kosmo.png")
-        pyxel.images[1].load(0, 0, "img/sokol3.png")
-        pyxel.images[2].load(0, 0, "img/imperial.png")
-        
-        # Состояния игры
-        self.game_state = "menu"
+        pyxel.init(SCREEN_WIDTH, SCREEN_HEIGHT, title='Star Wars: long flight')
+        self.load_resources()
         self.init_game()
-         
         pyxel.run(self.update, self.draw)
 
+    def load_resources(self):
+        '''Загрузка всех ресурсов (изображений)'''
+        # Фон
+        pyxel.image(SPRITE_BACKGROUND).load(0, 0, 'img/kosmo.png')
+        # Игрок
+        pyxel.images[SPRITE_PLAYER].load(0, 0, 'img/sokol3.png')
+        # Враги
+        pyxel.images[SPRITE_ENEMY].load(0, 0, 'img/imperial.png')
+
     def init_game(self):
-        """Инициализация игровых переменных"""
-        # Имперские корабли
-        self.enemies = []
-        for i in range(30): #  КОЛИЧЕСТВО ВРАГОВ
-            self.enemies.append({
-                'x': random.randint(0, 256-16),
-                'y': random.randint(0, 60),
-                'w': 16,
-                'h': 16,
-                'sprite_x': 0,
-                'sprite_y': 0,
-                'speed': random.uniform(0.5, 1.1),
-                'direction': random.choice([-1, 1]),
-                'alive': True,
-                'death_time': 0
-            })
-        
-        # Пули врагов
-        self.enemy_bullets = []
-        self.enemy_bullet_speed = 3
-        self.enemy_respawn_time = 3.5
-        
-        # Корабль игрока
-        self.sprite_x = 112
-        self.sprite_y = 120
-        self.sprite_w = 16
-        self.sprite_h = 16
-
-        # Пули игрока
-        self.bullet = []
-        self.bullet_speed = 3                
-        
+        '''Инициализация игровых переменных'''
+        self.game_state = GameState.MENU
         self.score = 0
-    
+        
+        # Создание объектов
+        self.player = Player()
+        self.enemies = [Enemy() for _ in range(ENEMY_COUNT)]
+        
+        # Списки пуль
+        self.player_bullets = []
+        self.enemy_bullets = []
+
     def update(self):
-        if self.game_state == 'menu':
-            if pyxel.btnp(pyxel.KEY_RETURN):
-                self.game_state = "playing"
-                self.init_game()
-            return
+        '''Основной игровой цикл'''
+        if self.game_state == GameState.MENU:
+            self.update_menu()
+        elif self.game_state in [GameState.GAME_OVER, GameState.VICTORY]:
+            self.update_game_end()
+        elif self.game_state == GameState.PLAYING:
+            self.update_playing()
+
+    def update_menu(self):
+        '''Обновление состояния меню'''
+        if pyxel.btnp(pyxel.KEY_RETURN):
+            self.start_new_game()
+
+    def update_game_end(self):
+        '''Обновление экрана окончания игры'''
+        if pyxel.btnp(pyxel.KEY_R):
+            self.game_state = GameState.MENU
+
+    def start_new_game(self):
+        '''Начало новой игры'''
+        self.init_game()
+        self.game_state = GameState.PLAYING
+
+    def update_playing(self):
+        '''Обновление игрового процесса'''
+        self.update_player()
+        self.update_bullets()
+        self.update_enemies()
+        self.check_victory()
+
+    def update_player(self):
+        '''Обновление состояния игрока'''
+        self.player.update()
         
+        # Стрельба игрока
+        if self.player.can_shoot():
+            self.player_bullets.append(self.player.create_bullet())
+
+    def update_bullets(self):
+        '''Обновление всех пуль'''
+        self.update_bullet_list(self.player_bullets)
+        self.update_bullet_list(self.enemy_bullets)
+
+    def update_bullet_list(self, bullets):
+        '''Обновление списка пуль'''
+        current_time = time.time()
         
-        elif self.game_state in ["game_over", "victory"]:
-            if pyxel.btnp(pyxel.KEY_R):
-                self.game_state = "menu"
-            return
-        
-        elif self.game_state == 'playing':
-            # Управление кораблем игрока
-            if pyxel.btn(pyxel.KEY_A):
-                self.sprite_x = max(self.sprite_x - 2, 0)
-            if pyxel.btn(pyxel.KEY_D):
-                self.sprite_x = min(self.sprite_x + 2, 256 - self.sprite_w)
-            if pyxel.btn(pyxel.KEY_W):
-                self.sprite_y = max(self.sprite_y - 2, 100)
-            if pyxel.btn(pyxel.KEY_S):
-                self.sprite_y = min(self.sprite_y + 2, 160 - self.sprite_h)
+        for bullet in bullets[:]:
+            bullet.update()
+            
+            # Удаление пуль за границами экрана
+            if bullet.is_out_of_bounds():
+                bullets.remove(bullet)
+                continue
                 
-            # Выстрел по SPACE
-            if pyxel.btnp(pyxel.KEY_SPACE, 10, 5):
-                self.bullet.append({"x": self.sprite_x + 7, "y": self.sprite_y}) # Формыла высчитывает центр вылета пули с кораюля 32 на 32
-        
-            # Обработка пуль игрока
-            # Проходим по копии списка пуль (используем [:] чтобы избежать проблем при изменении списка во время итерации)
-            for bullet in self.bullet[:]:
-                # Двигаем пулю вверх (уменьшаем координату y)
-                bullet["y"] -= self.bullet_speed
-                
-                # Если пуля вышла за верхнюю границу экрана
-                if bullet["y"] < 0:
-                    # Удаляем пулю из списка
-                    self.bullet.remove(bullet)
-                    # Переходим к следующей пуле, пропуская проверку столкновений
-                    continue  
+            # Проверка столкновений
+            self.check_bullet_collisions(bullet, current_time)
 
-                # Проверка столкновений пули с врагами
-                # Перебираем всех врагов для проверки столкновения с текущей пулей
-                for enemy in self.enemies:
-                    # Проверяем: 1) что враг жив, 2) есть столкновение
-                    if enemy['alive'] and self.check_collision(
-                        bullet["x"], bullet["y"], 1, 5,  # Координаты и размеры пули
-                        enemy['x'], enemy['y'], enemy['w'], enemy['h']  # Координаты и размеры врага
-                    ):
-                        # Если попадание:
-                        # 1) Удаляем пулю
-                        self.bullet.remove(bullet)
-                        # 2) "Убиваем" врага
-                        enemy['alive'] = False
-                        # 3) Запоминаем время смерти врага (для respawn)
-                        enemy['death_time'] = time.time()
-                        # 4) Увеличиваем счет
-                        self.score += 1
-                        # 5) Прерываем цикл по врагам (пуля уже попала)
-                        break             
-
-            # Получаем текущее время для проверки respawn врагов
-            current_time = time.time()
-
-            # Обновляем состояние всех врагов
+    def check_bullet_collisions(self, bullet, current_time):
+        '''Проверка столкновений пули с объектами'''
+        if bullet.is_enemy:
+            # Столкновение вражеской пули с игроком
+            if self.check_collision(
+                bullet.x, bullet.y, bullet.width, bullet.height,
+                self.player.x, self.player.y, self.player.width, self.player.height
+            ):
+                self.enemy_bullets.remove(bullet)
+                self.game_state = GameState.GAME_OVER
+        else:
+            # Столкновение пули игрока с врагами
             for enemy in self.enemies:
-                # Если враг мертв
-                if not enemy['alive']:
-                    # Проверяем, прошло ли достаточно времени для respawn
-                    if current_time - enemy['death_time'] > self.enemy_respawn_time:
-                        # Возрождаем врага:
-                        # 1) Делаем живым
-                        enemy['alive'] = True
-                        # 2) Новые случайные координаты
-                        enemy['x'] = random.randint(0, 256 - enemy['w'])
-                        enemy['y'] = random.randint(0, 50)
-                    # Пропускаем оставшуюся часть цикла для мертвых врагов
-                    continue  
-
-                # Движение живого врага
-                enemy['x'] += enemy['speed'] * enemy['direction']
-                
-                # Проверка достижения границ экрана
-                if enemy['x'] <= 0 or enemy['x'] >= 256 - enemy['w']:
-                    # Меняем направление движения (разворачиваем)
-                    enemy['direction'] *= -1
-                
-                # Случайная стрельба врагов (1 шанс из 70 на каждом кадре)
-                if pyxel.rndi(0, 70) < 1:
-                    # Создаем новую вражескую пулю:
-                    # x - центр врага, y - нижняя граница врага
-                    self.enemy_bullets.append({
-                        'x': enemy['x'] + enemy['w']//2 - 1,  # Центрирование пули
-                        'y': enemy['y'] + enemy['h']  # Нижняя часть врага
-                    })
-
-            # Обработка вражеских пуль
-            for bullet in self.enemy_bullets[:]:
-                # Двигаем пулю вниз
-                bullet['y'] += self.enemy_bullet_speed
-                
-                # Если пуля вышла за нижнюю границу экрана
-                if bullet['y'] > 160:
-                    # Удаляем пулю
-                    self.enemy_bullets.remove(bullet)
-                    # Переходим к следующей пуле
-                    continue  
-                
-                # Проверка столкновения пули с игроком
-                if self.check_collision(
-                    bullet['x'], bullet['y'], 1, 3,  # Координаты и размеры пули
-                    self.sprite_x, self.sprite_y, self.sprite_w, self.sprite_h  # Координаты и размеры игрока
-                ):
-                    self.enemy_bullets.remove(bullet)  # Удаляем пулю при столкновении
-                    # Если попадание - игра окончена
-                    self.game_state = "game_over"
-                    # Прерываем цикл (достаточно одного попадания)
+                if (enemy.alive and 
+                    self.check_collision(
+                        bullet.x, bullet.y, bullet.width, bullet.height,
+                        enemy.x, enemy.y, enemy.width, enemy.height
+                    )):
+                    self.player_bullets.remove(bullet)
+                    enemy.alive = False
+                    enemy.death_time = current_time
+                    self.score += 1
                     break
-                
-            # Проверка условия победы (10 убитых врагов)
-            if self.score >= 100:
-                self.game_state = "victory"
 
+    def update_enemies(self):
+        '''Обновление состояния врагов'''
+        current_time = time.time()
+        
+        for enemy in self.enemies:
+            # Возрождение врагов
+            if enemy.should_respawn(current_time):
+                enemy.alive = True
+                enemy.reset()
+            
+            # Обновление живых врагов
+            enemy.update()
+            
+            # Стрельба врагов
+            if enemy.alive and enemy.should_shoot():
+                self.enemy_bullets.append(enemy.create_bullet())
+
+    def check_victory(self):
+        '''Проверка условия победы'''
+        if self.score >= VICTORY_SCORE:
+            self.game_state = GameState.VICTORY
 
     def check_collision(self, x1, y1, w1, h1, x2, y2, w2, h2):
+        '''Проверка столкновения двух прямоугольников'''
         return (x1 < x2 + w2 and
                 x1 + w1 > x2 and
                 y1 < y2 + h2 and
                 y1 + h1 > y2)
-         
-    def draw(self):
-        pyxel.cls(0)
-        # Рисуем фон (неподвижный)
-        pyxel.blt(0, 0, 0, 0, 0, 256, 160)
-        
-        if self.game_state == 'menu':
-            # Экран меню
-            pyxel.text(85, 60, "STAR WARS: LONG FLIGHT", pyxel.frame_count % 16)
-            pyxel.text(90, 80, "PRESS ENTER TO START", pyxel.frame_count % 16)
-            # pyxel.text(85, 100, "CONTROLS:", 1)
-            pyxel.text(75, 100, "ARROWS - MOVE, SPACE - SHOOT", pyxel.frame_count % 16)
-        
-        elif self.game_state == "playing":
-            # Игровой экран
-            pyxel.text(5, 5, f'SCORE: {self.score}', 1)
-            
-            # Корабль игрока
-            pyxel.blt(self.sprite_x, self.sprite_y, 1, 0, 0, self.sprite_w, self.sprite_h, colkey=0)
-            
-            # Враги
-            for enemy in self.enemies:
-                if enemy['alive']:
-                    pyxel.blt(
-                        enemy['x'], enemy['y'], 2,
-                        enemy['sprite_x'], enemy['sprite_y'],
-                        enemy['w'], enemy['h'], 0
-                    )
-                
-            # Пули врагов
-            for bullet in self.enemy_bullets:
-                pyxel.rect(bullet['x'], bullet['y'], 1, 3, 8) 
-            # Пули игрока
-            for bullet in self.bullet:
-                pyxel.rect(bullet["x"], bullet["y"], 1, 5, 3)
-                
-        elif self.game_state == "victory":
-            # Экран победы
-            pyxel.text(100, 70, "YOU WIN!", pyxel.frame_count % 16)
-            pyxel.text(85, 85, f"SCORE: {self.score}", 7)
-            pyxel.text(85, 100, "PRESS R FOR MENU", 7)
-            
-        elif self.game_state == "game_over":
-            # Экран поражения
-            pyxel.text(100, 70, "GAME OVER", pyxel.frame_count % 16)
-            pyxel.text(85, 85, f"SCORE: {self.score}", 7)
-            pyxel.text(85, 100, "PRESS R FOR MENU", 7)
 
-App()
+    def draw(self):
+        '''Отрисовка игры'''
+        pyxel.cls(0)
+        
+        # Фон
+        pyxel.blt(0, 0, SPRITE_BACKGROUND, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT)
+        
+        # Отрисовка в зависимости от состояния игры
+        draw_methods = {
+            GameState.MENU: self.draw_menu,
+            GameState.PLAYING: self.draw_playing,
+            GameState.VICTORY: self.draw_victory,
+            GameState.GAME_OVER: self.draw_game_over
+        }
+        
+        draw_methods[self.game_state]()
+
+    def draw_menu(self):
+        '''Отрисовка меню'''
+        color = pyxel.frame_count % 16
+        pyxel.text(85, 60, 'STAR WARS: LONG FLIGHT', color)
+        pyxel.text(90, 80, 'PRESS ENTER TO START', color)
+        pyxel.text(75, 100, 'ARROWS - MOVE, SPACE - SHOOT', color)
+
+    def draw_playing(self):
+        '''Отрисовка игрового процесса'''
+        # Счет
+        pyxel.text(5, 5, f'SCORE: {self.score}', 1)
+        # Игрок
+        self.player.draw()
+        # Враги
+        for enemy in self.enemies:
+            enemy.draw()
+
+        # Пули
+        for bullet in self.player_bullets:
+            bullet.draw()
+
+        for bullet in self.enemy_bullets:
+            bullet.draw()
+
+    def draw_victory(self):
+        '''Отрисовка экрана победы'''
+        color = pyxel.frame_count % 16
+        pyxel.text(100, 70, 'YOU WIN!', color)
+        pyxel.text(85, 85, f'SCORE: {self.score}', 7)
+        pyxel.text(85, 100, 'PRESS R FOR MENU', 7)
+
+    def draw_game_over(self):
+        '''Отрисовка экрана поражения'''
+        color = pyxel.frame_count % 16
+        pyxel.text(100, 70, 'GAME OVER', color)
+        pyxel.text(85, 85, f'SCORE: {self.score}', 7)
+        pyxel.text(85, 100, 'PRESS R FOR MENU', 7)
+
+
+# Запуск игры
+if __name__ == "__main__":
+    App()
