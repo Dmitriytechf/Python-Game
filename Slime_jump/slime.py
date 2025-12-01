@@ -11,12 +11,12 @@ class App:
         pyxel.run(self.update, self.draw)
 
     def load_resources(self):
-        '''Загрузка ресурсов игры'''
-        pyxel.image(0).load(0, 0, "grow.png")
+        'Загрузка ресурсов игры'
+        pyxel.image(0).load(0, 0, 'grow.png')
 
     def reset_game(self):
-        '''Сброс всех игровых переменных'''
-        self.game_state = "menu"
+        'Сброс всех игровых переменных'
+        self.game_state = GameState.MENU
         self.player_x = PLAYER_START_X
         self.player_y = PLAYER_START_Y
         self.player_size = PLAYER_SIZE
@@ -26,30 +26,30 @@ class App:
         self.jump_velocity = 0
 
     def start_game(self):
-        '''Начало новой игры'''
+        'Начало новой игры'
         self.reset_game()
-        self.game_state = "playing"
+        self.game_state = GameState.PLAYING
 
     def update(self):
-        '''Основной игровой цикл'''
-        if self.game_state == "menu":
+        'Основной игровой цикл'
+        if self.game_state == GameState.MENU:
             self.update_menu()
-        elif self.game_state == "playing":
+        elif self.game_state == GameState.PLAYING:
             self.update_playing()
 
     def update_menu(self):
-        '''Обновление состояния меню'''
+        'Обновление состояния меню'
         if pyxel.btnp(pyxel.KEY_RETURN):
             self.start_game()
 
     def update_playing(self):
-        '''Обновление игрового процесса'''
+        'Обновление игрового процесса'
         self.update_player_movement()
         self.update_player_jump()
         self.update_player_physics()
 
     def update_player_movement(self):
-        '''Обновление движения игрока'''
+        'Обновление движения игрока'
         if pyxel.btn(pyxel.KEY_LEFT):
             self.player_x = max(self.player_x - PLAYER_SPEED, 0)
         
@@ -58,14 +58,14 @@ class App:
             self.player_x = min(self.player_x + PLAYER_SPEED, max_x)
 
     def update_player_jump(self):
-        '''Обработка прыжка игрока'''
+        'Обработка прыжка игрока'
         if pyxel.btnp(pyxel.KEY_SPACE) and self.jump_count < MAX_JUMPS:
             self.is_jumping = True
             self.jump_velocity = JUMP_FORCE
             self.jump_count += 1
 
     def update_player_physics(self):
-        '''Обновление физики игрока'''
+        'Обновление физики игрока'
         if not self.is_jumping:
             return
             
@@ -79,28 +79,28 @@ class App:
             self.jump_count = 0
 
     def draw(self):
-        '''Отрисовка игры'''
+        'Отрисовка игры'
         pyxel.cls(0)
         self.draw_background()
         
-        if self.game_state == "menu":
+        if self.game_state == GameState.MENU:
             self.draw_menu()
-        elif self.game_state == "playing":
+        elif self.game_state == GameState.PLAYING:
             self.draw_playing()
 
     def draw_background(self):
-        '''Отрисовка фона'''
+        'Отрисовка фона'
         pyxel.blt(0, 0, 0, 0, 0, 256, 160)
 
     def draw_menu(self):
-        '''Отрисовка меню'''
+        'Отрисовка меню'
         title_color = pyxel.frame_count % 16
         pyxel.text(TEXT_TITLE_X, TEXT_TITLE_Y, MENU_TITLE, title_color)
         pyxel.text(TEXT_START_X, TEXT_START_Y, MENU_START_TEXT, COLOR_PLAYER)
         pyxel.text(TEXT_CONTROLS_X, TEXT_CONTROLS_Y, MENU_CONTROLS_TEXT, COLOR_PLAYER)
 
     def draw_playing(self):
-        '''Отрисовка игрового процесса'''
+        'Отрисовка игрового процесса'
         # Игрок
         pyxel.rect(
             self.player_x, 
@@ -109,7 +109,6 @@ class App:
             self.player_size, 
             COLOR_PLAYER
         )
-        
         # Земля
         pyxel.rect(
             0, 
@@ -120,5 +119,5 @@ class App:
         )
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     App()
