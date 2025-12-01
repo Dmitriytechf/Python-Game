@@ -131,4 +131,5 @@ class Player:
 
     def draw(self):
         '''Отрисовка игрока'''
-        pyxel.blt(self.x, self.y, SPRITE_PLAYER, 0, 0, self.width, self.height, colkey=0)
+        pyxel.blt(self.x, self.y, SPRITE_PLAYER, 0, 0,
+                  self.width, self.height, colkey=0)
