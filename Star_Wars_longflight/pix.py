@@ -5,6 +5,7 @@ import pyxel
 from const import *
 from objects import Enemy, Player
 from music_manager import start_background_music
+from utils import load_all_resources, check_collision
 
 
 class App:
@@ -19,12 +20,7 @@ class App:
 
     def load_resources(self):
         '''Загрузка всех ресурсов (изображений)'''
-        # Фон
-        pyxel.image(SPRITE_BACKGROUND).load(0, 0, 'img/kosmo.png')
-        # Игрок
-        pyxel.images[SPRITE_PLAYER].load(0, 0, 'img/sokol3.png')
-        # Враги
-        pyxel.images[SPRITE_ENEMY].load(0, 0, 'img/imperial.png')
+        load_all_resources()
 
     def init_game(self):
         '''Инициализация игровых переменных'''
@@ -102,7 +98,7 @@ class App:
         '''Проверка столкновений пули с объектами'''
         if bullet.is_enemy:
             # Столкновение вражеской пули с игроком
-            if self.check_collision(
+            if check_collision(
                 bullet.x, bullet.y, bullet.width, bullet.height,
                 self.player.x, self.player.y, self.player.width, self.player.height
             ):
@@ -112,7 +108,7 @@ class App:
             # Столкновение пули игрока с врагами
             for enemy in self.enemies:
                 if (enemy.alive and 
-                    self.check_collision(
+                    check_collision(
                         bullet.x, bullet.y, bullet.width, bullet.height,
                         enemy.x, enemy.y, enemy.width, enemy.height
                     )):
@@ -143,13 +139,6 @@ class App:
         '''Проверка условия победы'''
         if self.score >= VICTORY_SCORE:
             self.game_state = GameState.VICTORY
-
-    def check_collision(self, x1, y1, w1, h1, x2, y2, w2, h2):
-        '''Проверка столкновения двух прямоугольников'''
-        return (x1 < x2 + w2 and
-                x1 + w1 > x2 and
-                y1 < y2 + h2 and
-                y1 + h1 > y2)
 
     def draw(self):
         '''Отрисовка игры'''
